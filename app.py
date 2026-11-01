@@ -1,15 +1,13 @@
 import os
-from flask import Flask, render_template
+from flask import Flask, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 
-# Настройка базы данных (пока используем простую SQLite, файл появится сам)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///knotseedbox.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Модель раздачи (как она хранится в базе)
 class Torrent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
@@ -20,18 +18,186 @@ class Torrent(db.Model):
     date_added = db.Column(db.String(50), nullable=False)
     icon = db.Column(db.String(10), default='📁')
 
-# Главная страница
+# ВШИВАЕМ HTML ПРЯМО В PYTHON (чтобы Render не искал файлы)
+HTML_CODE = """
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KnotSeedBox - Приватный трекер</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg-main: #0f0f0f; --bg-panel: #161616; --bg-hover: #1f1f1f; --border-color: #2a2a2a; --gold: #C5A059; --gold-hover: #D4AF37; --text-main: #E0E0E0; --text-muted: #888888; --green: #4ade80; --red: #f87171; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-main); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-size: 14px; }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg-main); } ::-webkit-scrollbar-thumb { background: #444; border-radius: 0; } ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+        header { background-color: #0a0a0a; border-bottom: 1px solid var(--border-color); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; z-index: 100; }
+        .logo-area { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .logo-icon { font-family: 'Cinzel', serif; font-size: 28px; font-weight: 700; color: var(--gold); }
+        .logo-text { font-family: 'Cinzel', serif; font-size: 18px; color: var(--text-main); letter-spacing: 0.5px; }
+        .logo-text span { color: var(--gold); }
+        .search-bar { flex: 0 1 500px; position: relative; }
+        .search-bar input { width: 100%; background-color: var(--bg-main); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px 8px 36px; color: var(--text-main); font-family: 'Inter', sans-serif; font-size: 13px; transition: border 0.2s; }
+        .search-bar input:focus { outline: none; border-color: var(--gold); }
+        .search-bar::before { content: '🔍'; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; opacity: 0.5; }
+        .header-actions { display: flex; align-items: center; gap: 12px; }
+        .btn { background: transparent; color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 14px; border-radius: 4px; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 13px; transition: all 0.2s; }
+        .btn:hover { border-color: var(--gold); color: var(--gold); }
+        .btn-primary { background-color: var(--gold); color: #000; border: none; font-weight: 600; }
+        .btn-primary:hover { background-color: var(--gold-hover); color: #000; }
+        .layout { display: flex; flex: 1; overflow: hidden; }
+        aside { width: 240px; background-color: var(--bg-panel); border-right: 1px solid var(--border-color); padding: 16px 0; display: flex; flex-direction: column; overflow-y: auto; }
+        .category-group { margin-bottom: 16px; }
+        .category-title { font-size: 11px; color: var(--text-muted); padding: 0 16px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .category-item { padding: 8px 16px; color: var(--text-main); font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-left: 2px solid transparent; transition: all 0.2s; }
+        .category-item:hover { background-color: var(--bg-hover); }
+        .category-item.active { background-color: rgba(197, 160, 89, 0.1); border-left-color: var(--gold); color: var(--gold); }
+        .badge { background-color: var(--red); color: white; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+        .stats-box { margin-top: auto; padding: 16px; border-top: 1px solid var(--border-color); font-size: 12px; color: var(--text-muted); }
+        .stats-box div { margin-bottom: 4px; }
+        .stats-box span { color: var(--text-main); font-weight: 500; }
+        main { flex: 1; padding: 24px; overflow-y: auto; }
+        .page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        .page-title { font-size: 20px; font-weight: 600; color: var(--text-main); }
+        .page-tabs { display: flex; gap: 16px; font-size: 13px; }
+        .page-tabs span { color: var(--text-muted); cursor: pointer; padding-bottom: 10px; margin-bottom: -11px; border-bottom: 2px solid transparent; transition: all 0.2s; }
+        .page-tabs span:hover { color: var(--text-main); }
+        .page-tabs span.active { color: var(--gold); border-bottom-color: var(--gold); }
+        .torrent-table { width: 100%; border-collapse: collapse; font-size: 13px; background-color: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; }
+        .torrent-table th { text-align: left; padding: 10px 12px; background-color: #1a1a1a; color: var(--text-muted); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+        .torrent-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+        .torrent-table tr:last-child td { border-bottom: none; }
+        .torrent-table tr:hover { background-color: var(--bg-hover); cursor: pointer; }
+        .torrent-table .col-title { width: 50%; }
+        .torrent-table .col-cat { width: 15%; color: var(--text-muted); }
+        .torrent-table .col-size { width: 10%; text-align: right; color: var(--text-muted); }
+        .torrent-table .col-seed { width: 10%; text-align: right; color: var(--green); font-weight: 500; }
+        .torrent-table .col-peer { width: 10%; text-align: right; color: var(--red); font-weight: 500; }
+        .torrent-table .col-date { width: 10%; text-align: right; color: var(--text-muted); }
+        .torrent-title { font-weight: 500; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+        .torrent-title .icon { font-size: 16px; opacity: 0.7; }
+        .torrent-title:hover { color: var(--gold); text-decoration: underline; }
+        .torrent-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(2px); }
+        .modal-overlay.active { display: flex; }
+        .modal { background-color: var(--bg-panel); border: 1px solid var(--gold); border-radius: 6px; padding: 24px; width: 90%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        .modal h3 { font-family: 'Cinzel', serif; color: var(--gold); margin-bottom: 12px; font-size: 20px; }
+        .modal p { color: var(--text-muted); margin-bottom: 20px; line-height: 1.5; }
+        .modal .btn { width: 100%; padding: 10px; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-area">
+            <div class="logo-icon">K</div>
+            <div class="logo-text">KNOT<span>SEEDBOX</span></div>
+        </div>
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="Поиск по названию...">
+        </div>
+        <div class="header-actions">
+            <button class="btn" onclick="showModal('Вход', 'Форма входа появится здесь чуть позже.')">Войти</button>
+            <button class="btn btn-primary" onclick="showModal('Загрузка', 'Форма загрузки появится здесь чуть позже.')">⬆ Загрузить</button>
+        </div>
+    </header>
+    <div class="layout">
+        <aside>
+            <div class="category-group">
+                <div class="category-title">Кино и видео</div>
+                <div class="category-item active">Фильмы <span class="badge">12</span></div>
+                <div class="category-item">Сериалы</div>
+                <div class="category-item">Аниме</div>
+            </div>
+            <div class="category-group">
+                <div class="category-title">Музыка</div>
+                <div class="category-item">Альбомы</div>
+                <div class="category-item">Lossless</div>
+            </div>
+            <div class="category-group">
+                <div class="category-title">Софт и Игры</div>
+                <div class="category-item">Windows</div>
+                <div class="category-item">Игры (PC)</div>
+            </div>
+            <div class="stats-box">
+                <div>Раздач: <span>{{ torrents|length }}</span></div>
+                <div>Онлайн: <span>1</span> (это вы)</div>
+            </div>
+        </aside>
+        <main>
+            <div class="page-header">
+                <div class="page-title">Все раздачи</div>
+                <div class="page-tabs">
+                    <span class="active">Новые</span>
+                    <span>Популярные</span>
+                    <span>По сидам</span>
+                </div>
+            </div>
+            <table class="torrent-table">
+                <thead>
+                    <tr>
+                        <th class="col-title">Название раздачи</th>
+                        <th class="col-cat">Категория</th>
+                        <th class="col-size" style="text-align: right;">Размер</th>
+                        <th class="col-seed" style="text-align: right;">Сиды</th>
+                        <th class="col-peer" style="text-align: right;">Пиры</th>
+                        <th class="col-date" style="text-align: right;">Обновлено</th>
+                    </tr>
+                </thead>
+                <tbody id="torrentTableBody">
+                    {% for torrent in torrents %}
+                    <tr onclick="showModal('{{ torrent.title }}', 'Раздача добавлена: {{ torrent.date_added }}. Размер: {{ torrent.size }}')">
+                        <td>
+                            <div class="torrent-title"><span class="icon">{{ torrent.icon }}</span> {{ torrent.title }}</div>
+                            <div class="torrent-meta">Раздают: {{ torrent.seeds }} | Качают: {{ torrent.peers }} | Размер: {{ torrent.size }}</div>
+                        </td>
+                        <td>{{ torrent.category }}</td>
+                        <td style="text-align: right;">{{ torrent.size }}</td>
+                        <td class="col-seed" style="text-align: right;">{{ torrent.seeds }}</td>
+                        <td class="col-peer" style="text-align: right;">{{ torrent.peers }}</td>
+                        <td style="text-align: right;">{{ torrent.date_added }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </main>
+    </div>
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <h3 id="modalTitle">Заголовок</h3>
+            <p id="modalText">Текст сообщения</p>
+            <button class="btn btn-primary" onclick="closeModal()">Понятно</button>
+        </div>
+    </div>
+    <script>
+        const overlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalText = document.getElementById('modalText');
+        function showModal(title, text) { modalTitle.innerText = title; modalText.innerText = text; overlay.classList.add('active'); }
+        function closeModal() { overlay.classList.remove('active'); }
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+        const searchInput = document.getElementById('searchInput');
+        const rows = document.querySelectorAll('.torrent-table tbody tr');
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            rows.forEach(row => {
+                const title = row.querySelector('.torrent-title').innerText.toLowerCase();
+                if (title.includes(query)) { row.classList.remove('hidden'); } else { row.classList.add('hidden'); }
+            });
+        });
+    </script>
+</body>
+</html>
+"""
+
 @app.route('/')
 def index():
-    # Берем все раздачи из базы данных
     torrents = Torrent.query.order_by(Torrent.id.desc()).all()
-    return render_template('index.html', torrents=torrents)
+    return render_template_string(HTML_CODE, torrents=torrents)
 
-# Команда для первичного заполнения базы (сработает при первом запуске)
 with app.app_context():
     db.create_all()
     if Torrent.query.count() == 0:
-        # Добавляем тестовые данные, если база пустая
         initial_data = [
             Torrent(title="Дюна: Часть вторая (2024) [4K UHD]", category="Фильмы", size="45 GB", seeds=1240, peers=340, date_added="2 мин назад", icon="🎬"),
             Torrent(title="Cyberpunk 2077: Phantom Liberty (v2.1)", category="Игры (PC)", size="65 GB", seeds=2100, peers=450, date_added="15 мин назад", icon="🎮"),
@@ -43,4 +209,5 @@ with app.app_context():
         db.session.commit()
 
 if __name__ == '__main__':
+    app.run(debug=True)
     app.run(debug=True)
